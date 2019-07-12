@@ -20,13 +20,14 @@
     "url": "https://github.com/matrix-hacks/matrix-puppet-bridge.git"
   },
   "dependencies": {
-    "bluebird": "^3.4.6",
+    "bluebird": "^3.5.5",
     "concat-stream": "^1.6.0",
     "debug": "^2.6.0",
     "fluent-ffmpeg": "^2.1.2",
     "image-size": "^0.7.3",
-    "matrix-appservice-bridge": "^1.4.0a",
-    "matrix-js-sdk": "^1.0.4",
+    "js-yaml": "^3.13.1",
+    "matrix-appservice-bridge": "^1.9.0",
+    "matrix-js-sdk": "^2.1.0",
     "mime-types": "^2.1.23",
     "needle": "^1.4.5",
     "read": "^1.0.7",

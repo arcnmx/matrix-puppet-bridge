@@ -1,3 +1,4 @@
+const debug = require('./debug')('Puppet');
 const Promise = require('bluebird');
 const matrixSdk = require("matrix-js-sdk");
 const fs = require('fs');
@@ -5,12 +6,8 @@ const readFile = Promise.promisify(fs.readFile);
 const writeFile = Promise.promisify(fs.writeFile);
 const read = Promise.promisify(require('read'));
 const utils = require('./utils');
+const yaml = require('js-yaml');
 const whyPuppeting = 'https://github.com/kfatehi/matrix-appservice-imessage/commit/8a832051f79a94d7330be9e252eea78f76d774bc';
-
-const readConfigFile = async(jsonFile) => {
-  const buffer = await readFile(jsonFile);
-  return JSON.parse(buffer);
-};
 
 /**
  * Puppet class
@@ -19,14 +16,82 @@ class Puppet {
   /**
    * Constructs a Puppet
    *
-   * @param {string} jsonFile path to JSON config file
+   * @param {Object} args options
+   * @param {Object} args.config.data puppet bridge config data
+   * @param {string} args.config.path path to config file
+   * @param {string} args.config.format "json" (legacy) or "yaml"
    */
-  constructor(jsonFile) {
-    this.jsonFile = jsonFile;
+  constructor(args) {
     this.id = null;
     this.client = null;
     this.thirdPartyRooms = {};
     this.app = null;
+
+    if (typeof args === "string") {
+      // legacy compatibility fallback
+      this.config = {
+        path: args,
+        format: "json"
+      };
+    } else {
+      this.config = args.config;
+    }
+  }
+
+  static parseMxid(userId) {
+    let matches = /^(.*?):(.*)$/.exec(userId);
+    if (matches !== null) {
+      return {
+        localpart: matches[1],
+        domain: matches[2]
+      };
+    } else {
+      throw new Error("Invalid MXID");
+    }
+  }
+
+  static configSchemaProperties() {
+    return {
+      puppet: {
+        type: "object",
+        properties: {
+          id: "string",
+          token: "string"
+        }
+      },
+      bridge: {
+        type: "object",
+        properties: {
+          homeserverUrl: "string",
+        }
+      }
+    };
+  }
+
+  static detectConfigPath() {
+    const nopt = require('nopt');
+    const path = require('path');
+    nopt.invalidHandler = false;
+    const args = nopt({
+        config: path
+    }, {
+        c: "--config",
+    });
+
+    return args.config;
+  }
+
+  async getConfig() {
+    if (typeof this.config.data !== "object") {
+      const buffer = await readFile(this.config.path);
+      if (this.config.format === "json") {
+        this.config.data = JSON.parse(buffer).puppet;
+      } else {
+        this.config.data = yaml.safeLoad(buffer).puppet;
+      }
+    }
+
+    return this.config.data;
   }
 
   /**
@@ -35,7 +100,7 @@ class Puppet {
    * @returns {Promise} Returns a promise resolving the MatrixClient
    */
   async startClient() {
-    const config = await readConfigFile(this.jsonFile);
+    const config = await this.getConfig();
     this.id = config.puppet.id;
     this.client = matrixSdk.createClient({
       baseUrl: config.bridge.homeserverUrl,
@@ -101,31 +166,110 @@ class Puppet {
   /**
    * Prompts user for credentials and updates the puppet section of the config
    *
+   * @param {Object} args options
+   * @param {boolean} args.detectConfigPath infer bridge config from argv
+   * @param {AppServiceRegistration} args.registration app service registration
+   *
    * @returns {Promise}
    */
-  async associate() {
-    const config = await readConfigFile(this.jsonFile);
-    console.log([
+  async associate(args) {
+    const { info, warn } = debug(this.associate.name);
+
+    info([
       'This bridge performs matrix user puppeting.',
       'This means that the bridge logs in as your user and acts on your behalf',
       'For the rationale, see '+whyPuppeting
     ].join('\n'));
-    console.log("Enter your user's localpart");
-    const localpart = await read({ silent: false });
-    let id = '@'+localpart+':'+config.bridge.domain;
-    console.log("Enter password for "+id);
-    const password = await read({ silent: true, replace: '*' });
-    let matrixClient = matrixSdk.createClient(config.bridge.homeserverUrl);
-    const accessDat = await matrixClient.loginWithPassword(id, password);
-    console.log("log in success");
-    await writeFile(this.jsonFile, JSON.stringify(Object.assign({}, config, {
-      puppet: {
-        id,
-        localpart,
-        token: accessDat.access_token
+
+    const args_ = args !== undefined ? args : { };
+    const reg = args_.registration;
+
+    const config = await this.getConfig();
+
+    const userId = config.puppet !== undefined && config.puppet.id !== undefined ?
+      config.puppet.id : await (async () => {
+        console.error("Enter your user id");
+        return await read({ silent: false });
+    })();
+
+    const homeserver = config.bridge !== undefined && config.bridge.homeserverUrl !== undefined ?
+      config.bridge.homeserverUrl : await (async () => {
+        const findHome = async (domain) => {
+          info(`Searching for homeserver at ${domain}`);
+          const clientConfig = await matrixSdk.AutoDiscovery.findClientConfig(domain);
+          const hs = clientConfig["m.homeserver"];
+          if (hs.state !== "SUCCESS") {
+            throw hs.error;
+          }
+          info(`Found homeserver at ${hs.base_url}`);
+          return hs.base_url;
+        };
+
+        try {
+          let { localpart, domain } = Puppet.parseMxid(userId);
+          return findHome(domain);
+        } catch (ex) {
+          console.error("Enter your matrix homeserver URL");
+          const homeserver = await read({ silent: false });
+          try {
+            // validate the URL parses
+            return `${new URL(homeserver)}`;
+          } catch (ex) {
+            // otherwise last-ditch attempt to treat it as a domain
+            return findHome(homeserver);
+          }
+        }
+    })();
+
+    const { homeserverUrl, id, token } = config.puppet !== undefined && config.puppet.token !== undefined ? {
+      homeserverUrl: homeserver,
+      id: userId,
+      token: config.puppet.token
+    } : await (async () => {
+        console.error(`Enter password for ${userId}`);
+        const password = await read({ silent: true, replace: '*' });
+        let client = matrixSdk.createClient(homeserver);
+        const accessDat = await client.login("m.login.password", {
+          user: userId,
+          password: password,
+          initial_device_display_name: reg !== undefined ? reg.getSenderLocalpart() : undefined
+        });
+        info("log in success");
+        return {
+          token: accessDat.access_token,
+          id: accessDat.user_id || userId,
+          homeserverUrl: accessDat.well_known !== undefined ? accessDat.well_known["m.homeserver"] : homeserver
+        };
+    })();
+
+    if (config.puppet === undefined || config.bridge === undefined || config.puppet.id !== id || config.puppet.token !== token || config.bridge.homeserverUrl !== homeserver) {
+      const puppetConfig = {
+        puppet: {
+          id: id,
+          token: token
+        },
+        bridge: {
+          homeserverUrl: homeserver
+        }
+      };
+      const newConfig = Object.assign(config, puppetConfig);
+
+      const configPath = this.config.path !== undefined ? this.config.path :
+        (args_.detectConfigPath ? Puppet.detectConfigPath() : undefined);
+      if (configPath !== undefined) {
+        await writeFile(configPath, (() => {
+          if (this.config.format === "json") {
+            return JSON.stringify(newConfig, null, 2);
+          } else {
+            return yaml.safeDump(newConfig);
+          }
+        })());
+        info(`Updated config file ${configPath}`);
+      } else {
+        warn('Please update your bridge config');
+        console.log(yaml.safeDump(puppetConfig));
       }
-    }), null, 2));
-    console.log('Updated config file '+this.jsonFile);
+    }
   }
 
   /**
