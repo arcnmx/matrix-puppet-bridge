@@ -25,16 +25,13 @@ const {
   MatrixPuppetBridgeBase
 } = require("matrix-puppet-bridge");
 const FacebookClient = require('./client');
-const config = require('./config.json');
-const path = require('path');
-const puppet = new Puppet(path.join(__dirname, './config.json' ));
 const debug = require('debug')('matrix-puppet:facebook');
 
 class App extends MatrixPuppetBridgeBase {
   getServicePrefix() {
     return "facebook";
   }
-  initThirdPartyClient() {
+  initThirdPartyClient(config) {
     this.threadInfo = {};
     this.thirdPartyClient = new FacebookClient(this.config.facebook);
     this.thirdPartyClient.on('message', (data)=>{
@@ -73,27 +70,41 @@ class App extends MatrixPuppetBridgeBase {
 }
 
 new Cli({
-  port: config.port,
-  registrationPath: config.registrationPath,
+  enableLocalpart: true,
+  bridgeConfig: {
+    affectsRegistration: true
+  },
   generateRegistration: async(reg, callback) => {
     try {
-      await puppet.associate();
+      const puppet = new Puppet({
+        config: this.getConfig()
+      });
+
       reg.setId(AppServiceRegistration.generateToken());
       reg.setHomeserverToken(AppServiceRegistration.generateToken());
       reg.setAppServiceToken(AppServiceRegistration.generateToken());
       reg.setSenderLocalpart("facebookbot");
       reg.addRegexPattern("users", "@facebook_.*", true);
+
+      await puppet.associate({
+        detectConfigPath: true,
+        registration: reg
+      });
+
       callback(reg);
     } catch(err) {
       console.error(err.message);
       process.exit(-1);
     }
   },
-  run: async(port) => {
+  run: async(port, config) => {
+    const puppet = new Puppet({
+      config: config
+    });
     const app = new App(config, puppet);
     try {
       await puppet.startClient();
-      await app.initThirdPartyClient();
+      await app.initThirdPartyClient(config);
       await app.bridge.run(port, config);
       console.log('Matrix-side listening on port %s', port);
     } catch(err) {
