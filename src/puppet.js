@@ -17,9 +17,9 @@ class Puppet {
    * Constructs a Puppet
    *
    * @param {Object} args options
-   * @param {Object} args.config.data puppet bridge config data
-   * @param {string} args.config.path path to config file
-   * @param {string} args.config.format "json" (legacy) or "yaml"
+   * @param {Object} args.config puppet bridge config data
+   * @param {string} args.configPath path to config file
+   * @param {string} args.configFormat "json" (legacy) or "yaml"
    */
   constructor(args) {
     this.id = null;
@@ -34,7 +34,11 @@ class Puppet {
         format: "json"
       };
     } else {
-      this.config = args.config;
+      this.config = {
+        data: args.config,
+        path: args.configPath,
+        format: args.configFormat
+      };
     }
   }
 
