@@ -250,23 +250,23 @@ class Base {
     return new Bridge(Object.assign({}, config.bridge, {
       controller: {
         onUserQuery: function(queriedUser) {
-          console.log('got user query', queriedUser);
+          debug(this.onUserQuery.name).info();
           return {}; // auto provision users w no additional data
         },
         onEvent: this.handleMatrixEvent.bind(this),
         onAliasQuery: function() {
-          console.log('on alias query');
+          debug(this.onAliasQuery.name).info();
         },
         thirdPartyLookup: {
           protocols: [this.getServicePrefix()],
           getProtocol: function() {
-            console.log('get proto');
+            debug(this.getProtocol.name).info();
           },
           getLocation: function() {
-            console.log('get loc');
+            debug(this.getLocation.name).info();
           },
           getUser: function() {
-            console.log('get user');
+            debug(this.getUser.name).info();
           }
         }
       }
@@ -781,7 +781,7 @@ class Base {
     let messageType = "m.file";
 
     if (!mimetype) {
-      console.log("Couldn't get mimetype for attachment.");
+      warn("Couldn't get mimetype for attachment.");
     } else {
       if (mimetype.includes("image")) {
         messageType = "m.image";

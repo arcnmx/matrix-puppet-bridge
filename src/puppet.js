@@ -100,6 +100,7 @@ class Puppet {
    * @returns {Promise} Returns a promise resolving the MatrixClient
    */
   async startClient() {
+    const { info, warn } = debug(this.startClient.name);
     const config = await this.getConfig();
     this.id = config.puppet.id;
     this.client = matrixSdk.createClient({
@@ -125,7 +126,7 @@ class Puppet {
         for (var eventId in content) {
           for (var userId in content[eventId]['m.read']) {
             if (userId === this.id) {
-              console.log("Receive a read event from ourself");
+              info("Receive a read event from ourself");
               return this.app.sendReadReceiptAsPuppetToThirdPartyRoomWithId(this.thirdPartyRooms[room.roomId]);
             }
           }
@@ -136,7 +137,7 @@ class Puppet {
     let isSynced = false;
     this.client.on('sync', (state) => {
       if ( state === 'PREPARED' ) {
-        console.log('synced');
+        info('synced');
         isSynced = true;
       }
     });
