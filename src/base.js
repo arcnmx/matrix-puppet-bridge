@@ -5,7 +5,7 @@ const bangCommand = require('./bang-command');
 const urlParse = require('url').parse;
 const inspect = require('util').inspect;
 const path = require('path');
-const { download, autoTagger, isFilenameTagged, sleep } = require('./utils');
+const { download, autoTagger, isFilenameTagged, sleep, parseMxid } = require('./utils');
 const fs = require('fs');
 const ffmpeg = require('fluent-ffmpeg');
 const sizeOf = require('image-size');
@@ -214,18 +214,19 @@ class Base {
    * @param {object} config Config as a JavaScript object
    * @param {object} puppet Instance of Puppet to use
    * @param {object} bridge Optional instance of Bridge to use
+   * @param {AppServiceRegistration} reg The registration associated with the bridge
    */
-  constructor(config, puppet, bridge) {
+  constructor(config, puppet, bridge, reg) {
     const { info } = debug();
     this.allowNullSenderName = false;
     this.config = config;
     this.puppet = puppet;
-    this.domain = config.bridge.domain;
+    this.domain = parseMxid(config.puppet.id).domain;
     this.homeserver = urlParse(config.bridge.homeserverUrl);
     this.deduplicationTag = this.config.deduplicationTag || this.defaultDeduplicationTag();
     this.deduplicationTagPattern = this.config.deduplicationTagPattern || this.defaultDeduplicationTagPattern();
     this.deduplicationTagRegex = new RegExp(this.deduplicationTagPattern);
-    this.bridge = bridge || this.setupBridge(config);
+    this.bridge = bridge || this.setupBridge(config.bridge, reg);
     info('initialized');
 
     this.puppet.setApp(this)
@@ -257,8 +258,12 @@ class Base {
    *
    * @private
    */
-  setupBridge(config) {
-    return new Bridge(Object.assign({}, config.bridge, {
+  setupBridge(config, reg) {
+    const bridge = Object.assign({
+      registration: reg,
+      domain: this.domain,
+    }, config);
+    return new Bridge(Object.assign(bridge, {
       controller: {
         onUserQuery: function(queriedUser) {
           debug(this.onUserQuery.name).info();

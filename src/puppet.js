@@ -42,18 +42,6 @@ class Puppet {
     }
   }
 
-  static parseMxid(userId) {
-    let matches = /^(.*?):(.*)$/.exec(userId);
-    if (matches !== null) {
-      return {
-        localpart: matches[1],
-        domain: matches[2]
-      };
-    } else {
-      throw new Error("Invalid MXID");
-    }
-  }
-
   static configSchemaProperties() {
     return {
       puppet: {
@@ -211,7 +199,7 @@ class Puppet {
         };
 
         try {
-          let { localpart, domain } = Puppet.parseMxid(userId);
+          let { localpart, domain } = utils.parseMxid(userId);
           return findHome(domain);
         } catch (ex) {
           console.error("Enter your matrix homeserver URL");
@@ -257,7 +245,7 @@ class Puppet {
           homeserverUrl: homeserver
         }
       };
-      const newConfig = Object.assign(config, puppetConfig);
+      const newConfig = Object.assign({}, config, puppetConfig);
 
       const configPath = this.config.path !== undefined ? this.config.path :
         (args_.detectConfigPath ? Puppet.detectConfigPath() : undefined);

@@ -80,6 +80,19 @@ const until = async(check) => {
   }
 };
 
+const parseMxid = (userId) => {
+  let matches = /^(.*?):(.*)$/.exec(userId);
+  if (matches !== null) {
+    return {
+      localpart: matches[1],
+      domain: matches[2]
+    };
+  } else {
+    throw new Error("Invalid MXID");
+  }
+}
+
+
 module.exports = {
   download: {
     getStream: downloadGetStream,
@@ -92,6 +105,7 @@ module.exports = {
   isFilenameTagged,
   sleep,
   until,
+  parseMxid
 };
 
 if (!module.parent) {
